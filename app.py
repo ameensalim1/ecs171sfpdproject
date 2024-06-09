@@ -1,9 +1,9 @@
 import streamlit as st
-from joblib import load
 import pandas as pd
 import numpy as np
 import ast
 from sklearn.preprocessing import StandardScaler
+from joblib import load
 
 # Load the RandomForest model and the scaler
 rf_model = load('rf_model.joblib')
