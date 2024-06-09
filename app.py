@@ -79,15 +79,15 @@ def police_allocation(num_police_vehicles, hour_of_day, district_for_allocation,
     weight_for_response_time = 0.5
 
     # # Normalize both incident count and response time
-    # max_incidents = neighborhood_summary['incident_count'].max()
-    # max_response_time = neighborhood_summary['average_response_time'].max()
+    max_incidents = neighborhood_summary['incident_count'].max()
+    max_response_time = neighborhood_summary['average_response_time'].max()
 
-    # neighborhood_summary['normalized_incidents'] = neighborhood_summary['incident_count'] / max_incidents
-    # neighborhood_summary['normalized_response_time'] = neighborhood_summary['average_response_time'] / max_response_time
+    neighborhood_summary['normalized_incidents'] = neighborhood_summary['incident_count'] / max_incidents
+    neighborhood_summary['normalized_response_time'] = neighborhood_summary['average_response_time'] / max_response_time
 
     # Calculate a composite score
-    neighborhood_summary['composite_score'] = (weight_for_incidents * neighborhood_summary['incident_count']) \
-                                            + (weight_for_response_time * (1 - neighborhood_summary['average_response_time']))
+    neighborhood_summary['composite_score'] = (weight_for_incidents * neighborhood_summary['normalized_incidents']) \
+                                            + (weight_for_response_time * (1 - neighborhood_summary['normalized_response_time']))
     
     highest_composite_score = neighborhood_summary['composite_score'].max()
     # Using composite score to balance the police allocation ratio so that response time can be more stabilized through the neighborhoods:
