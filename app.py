@@ -3,6 +3,7 @@ from joblib import load
 import pandas as pd
 import numpy as np
 import ast
+from sklearn.preprocessing import StandardScaler
 
 # Load the RandomForest model and the scaler
 rf_model = load('rf_model.joblib')
@@ -35,7 +36,7 @@ main_data = load_main_dataset()
 
 
 def police_allocation(num_police_vehicles, hour_of_day, district_for_allocation, model, scaler):
-# Grabbing requested district:
+    # Grabbing requested district:
     data_subset = main_data.loc[main_data['police_district'].isin([district_for_allocation])].copy()
     # Grabbing relevant hour range:
     data_subset['hour'] = main_data['received_datetime'].dt.hour
@@ -57,6 +58,7 @@ def police_allocation(num_police_vehicles, hour_of_day, district_for_allocation,
         neighborhood_ratios[neighborhood] = ratio
 
     # Creating a response time columns to use for composite score calculation:
+    filtered_data_subset['onscene_datetime'] = pd.to_datetime(filtered_data_subset['onscene_datetime'], errors='coerce')
     filtered_data_subset['response_time_minutes'] = (filtered_data_subset['onscene_datetime'] - filtered_data_subset['received_datetime']).dt.total_seconds() / 60
     # Group by district and neighborhood, then aggregate
     neighborhood_summary = filtered_data_subset.groupby(['police_district', 'analysis_neighborhood']).agg({
@@ -71,6 +73,7 @@ def police_allocation(num_police_vehicles, hour_of_day, district_for_allocation,
     }, inplace=True)
 
     # Normalization for clarity:
+    scaler = StandardScaler()
     neighborhood_summary['normalized_incidents'] = scaler.fit_transform(neighborhood_summary[['incident_count']])
     neighborhood_summary['normalized_response'] = scaler.fit_transform(neighborhood_summary[['average_response_time']])
 
@@ -78,7 +81,7 @@ def police_allocation(num_police_vehicles, hour_of_day, district_for_allocation,
     weight_for_incidents = 0.5
     weight_for_response_time = 0.5
 
-    # # Normalize both incident count and response time
+    # Normalize both incident count and response time
     max_incidents = neighborhood_summary['incident_count'].max()
     max_response_time = neighborhood_summary['average_response_time'].max()
 
@@ -88,20 +91,16 @@ def police_allocation(num_police_vehicles, hour_of_day, district_for_allocation,
     # Calculate a composite score
     neighborhood_summary['composite_score'] = (weight_for_incidents * neighborhood_summary['normalized_incidents']) \
                                             + (weight_for_response_time * (1 - neighborhood_summary['normalized_response_time']))
-    
     highest_composite_score = neighborhood_summary['composite_score'].max()
     # Using composite score to balance the police allocation ratio so that response time can be more stabilized through the neighborhoods:
-    neighborhood_summary['police_allocation_ratio'] = (neighborhood_summary['incident_count']/sum_frequencies) + ((highest_composite_score - neighborhood_summary['composite_score']/10))
+    neighborhood_summary['police_allocation_ratio'] = (neighborhood_summary['incident_count']/sum_frequencies) + ((highest_composite_score - neighborhood_summary['composite_score'])/10)
     total = neighborhood_summary['police_allocation_ratio'].sum() - 1
 
     # Assigning vehicles:
     max_index = neighborhood_summary['police_allocation_ratio'].idxmax()
     neighborhood_summary.loc[max_index, 'police_allocation_ratio'] -= total
     neighborhood_summary['vehicle_assignment'] = np.floor(neighborhood_summary['police_allocation_ratio']*num_police_vehicles)
-    return neighborhood_summary
-
-
-
+    return neighborhood_summary[['analysis_neighborhood', 'incident_count', 'average_response_time', 'vehicle_assignment']]
 
 
 
@@ -121,7 +120,7 @@ def get_historical_averages(data,timeframe):
 
 historical_averages = get_historical_averages(data,'month')
 historical_averages_tod = get_historical_averages(tod_data,'time_of_day')
-st.title("Incident Prediction")
+st.title("Incident Prediction and Police Allocation")
 
 # Input fields for month and cluster which could influence incident rates
 month_value = st.slider("Select the month:", min_value=1, max_value=12, step=1)
@@ -143,7 +142,7 @@ if district:
 
 
 
-if st.button('Predict Incident Counts MONTH'):
+if st.button('Predict Incident Counts for Month'):
     # Filter the historical averages based on the selected month and cluster
     if district and 'neighborhood' in locals():
         cluster_value = data[data['analysis_neighborhood'] == neighborhood]['cluster'].iloc[0]
@@ -172,13 +171,11 @@ if st.button('Predict Incident Counts MONTH'):
         # Predict using the RandomForest model
         prediction = rf_model.predict(input_data)[0]
         st.write(f"Predicted number of incidents: {prediction}")
-        allocation = police_allocation(num_police_vehicles, tod_value, district, rf_model_tod, scaler_tod)
-        st.write(allocation)
     else:
         st.error("No historical data available for the selected month and cluster.")
 
 
-if st.button('Predict Incident Counts TOD'):
+if st.button('Predict Incident Counts for Hour'):
     # Filter the historical averages based on the selected time of day and cluster
     if district and 'neighborhood' in locals():
         cluster_value = tod_data[tod_data['analysis_neighborhood'] == neighborhood]['cluster'].iloc[0]
@@ -205,10 +202,10 @@ if st.button('Predict Incident Counts TOD'):
         # Predict using the RandomForest model
         prediction_tod = rf_model_tod.predict(input_data_tod)[0]
         st.write(f"Predicted number of incidents: {prediction_tod}")
-        allocation_tod = police_allocation(num_police_vehicles, tod_value, district, rf_model_tod, scaler_tod)
-        st.write(allocation_tod)
     else:
         st.error("No historical data available for the selected time of day and cluster.")
 
 
-
+if st.button('Allocate Police Force'):
+   allocation = police_allocation(num_police_vehicles, tod_value, district, rf_model_tod, scaler_tod)
+   st.write(allocation) 
